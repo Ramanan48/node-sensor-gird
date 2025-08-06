@@ -1,5 +1,5 @@
 import express from "express";
-import { verifyApiKey } from "../middlewares/apiKeyMiddleware.js";
+
 import {
   createChannel,
   getMyChannels,
@@ -10,10 +10,10 @@ import {
 
 const router = express.Router();
 
-router.post("/", verifyApiKey, createChannel);
-router.get("/", verifyApiKey, getMyChannels);
-router.get("/:channelId", verifyApiKey, getChannelById);
-router.put("/:channelId", verifyApiKey, updateChannel);
-router.delete("/:channelId", verifyApiKey, deleteChannel);
+router.post("/", createChannel);
+router.get("/", getMyChannels);
+router.get("/:channelId", getChannelById);
+router.put("/:channelId", updateChannel);
+router.delete("/:channelId", deleteChannel);
 
 export default router;

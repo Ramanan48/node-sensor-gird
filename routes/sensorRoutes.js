@@ -1,5 +1,4 @@
 import express from "express";
-import { verifyApiKey } from "../middlewares/apiKeyMiddleware.js";
 import {
   postSensorData,
   getLatestData,
@@ -9,7 +8,7 @@ import {
 const router = express.Router();
 
 // POST data from IoT sensor
-router.post("/:channelId/data", verifyApiKey, postSensorData);
+router.post("/:channelId/data", postSensorData);
 
 // GET latest data (frontend live chart)
 router.get("/:channelId/latest", getLatestData);
