@@ -18,3 +18,5 @@ router.get("/:channelId/latest", getLatestData);
 router.get("/:channelId/history", getChannelHistory);
 
 export default router;
+
+// udpated
