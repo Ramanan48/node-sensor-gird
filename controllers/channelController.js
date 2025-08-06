@@ -105,3 +105,36 @@ export const deleteChannel = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+
+export const getChannelsByUserId = async (req, res) => {
+  try {
+    const userId = req.params.userId || req.user?._id; // allow logged-in or param
+
+    const channels = await Channel.find({ userId }).lean();
+
+    const result = await Promise.all(
+      channels.map(async (ch) => {
+        // Latest data for channel
+        const latestData = await SensorData.findOne({ channelId: ch._id })
+          .sort({ createdAt: -1 })
+          .lean();
+
+        // Count total entries for analytics
+        const totalEntries = await SensorData.countDocuments({ channelId: ch._id });
+
+        return {
+          ...ch,
+          latestData: latestData?.data || null,
+          lastUpdate: latestData?.createdAt || null,
+          totalEntries
+        };
+      })
+    );
+
+    res.json({ count: result.length, channels: result });
+  } catch (error) {
+    console.error("❌ getChannelsByUserId:", error);
+    res.status(500).json({ message: error.message });
+  }
+};

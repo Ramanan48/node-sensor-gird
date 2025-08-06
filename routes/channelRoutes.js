@@ -5,7 +5,8 @@ import {
   getMyChannels,
   getChannelById,
   updateChannel,
-  deleteChannel
+  deleteChannel,
+    getChannelsByUserId,
 } from "../controllers/channelController.js";
 
 const router = express.Router();
@@ -15,5 +16,6 @@ router.get("/", getMyChannels);
 router.get("/:channelId", getChannelById);
 router.put("/:channelId", updateChannel);
 router.delete("/:channelId", deleteChannel);
+router.get("/user/:userId", getChannelsByUserId);
 
 export default router;
