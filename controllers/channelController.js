@@ -1,7 +1,8 @@
 import Channel from "../models/Channel.js";
+import SensorData from "../models/SensorData.js";
 import { generateChannelId } from "../utils/generateChannelId.js";
 
-// Create Channel
+// ✅ Create a new channel
 export const createChannel = async (req, res) => {
   try {
     const { projectName, description, fields } = req.body;
@@ -17,46 +18,90 @@ export const createChannel = async (req, res) => {
       fields
     });
 
-    res.status(201).json(channel);
+    res.status(201).json({ message: "Channel created successfully", channel });
   } catch (error) {
+    console.error("❌ createChannel:", error);
     res.status(500).json({ message: error.message });
   }
 };
 
-// Get all channels for logged-in user
+// ✅ Get all channels for the logged-in user with latest sensor data
 export const getMyChannels = async (req, res) => {
-  const channels = await Channel.find({ userId: req.user._id });
-  res.json(channels);
+  try {
+    const channels = await Channel.find({ userId: req.user._id }).lean();
+
+    // Attach latest sensor data for each channel
+    const result = await Promise.all(
+      channels.map(async (ch) => {
+        const latestData = await SensorData.findOne({ channelId: ch._id })
+          .sort({ createdAt: -1 })
+          .lean();
+
+        return { ...ch, latestData: latestData?.data || null, lastUpdate: latestData?.createdAt || null };
+      })
+    );
+
+    res.json(result);
+  } catch (error) {
+    console.error("❌ getMyChannels:", error);
+    res.status(500).json({ message: error.message });
+  }
 };
 
-// Get single channel
+// ✅ Get single channel with full history
 export const getChannelById = async (req, res) => {
-  const channel = await Channel.findOne({ channel_id: req.params.channelId, userId: req.user._id });
-  if (!channel) return res.status(404).json({ message: "Channel not found" });
-  res.json(channel);
+  try {
+    const channel = await Channel.findOne({ channel_id: req.params.channelId, userId: req.user._id }).lean();
+    if (!channel) return res.status(404).json({ message: "Channel not found" });
+
+    const history = await SensorData.find({ channelId: channel._id })
+      .sort({ createdAt: -1 })
+      .limit(parseInt(req.query.limit) || 50)
+      .lean();
+
+    res.json({ ...channel, history });
+  } catch (error) {
+    console.error("❌ getChannelById:", error);
+    res.status(500).json({ message: error.message });
+  }
 };
 
-// Update channel
+// ✅ Update a channel (partial update)
 export const updateChannel = async (req, res) => {
-  const channel = await Channel.findOne({ channel_id: req.params.channelId, userId: req.user._id });
-  if (!channel) return res.status(404).json({ message: "Channel not found" });
+  try {
+    const { projectName, description, fields } = req.body;
 
-  const { projectName, description, fields } = req.body;
-  if (projectName) channel.projectName = projectName;
-  if (description) channel.description = description;
-  if (fields) channel.fields = fields;
+    const channel = await Channel.findOne({ channel_id: req.params.channelId, userId: req.user._id });
+    if (!channel) return res.status(404).json({ message: "Channel not found" });
 
-  await channel.save();
-  res.json(channel);
+    if (projectName) channel.projectName = projectName;
+    if (description) channel.description = description;
+    if (fields) channel.fields = fields;
+
+    await channel.save();
+    res.json({ message: "Channel updated successfully", channel });
+  } catch (error) {
+    console.error("❌ updateChannel:", error);
+    res.status(500).json({ message: error.message });
+  }
 };
 
-// Delete channel
+// ✅ Delete channel and its sensor data
 export const deleteChannel = async (req, res) => {
-  const channel = await Channel.findOneAndDelete({
-    channel_id: req.params.channelId,
-    userId: req.user._id,
-  });
+  try {
+    const channel = await Channel.findOneAndDelete({
+      channel_id: req.params.channelId,
+      userId: req.user._id,
+    });
 
-  if (!channel) return res.status(404).json({ message: "Channel not found" });
-  res.json({ message: "Channel deleted successfully" });
+    if (!channel) return res.status(404).json({ message: "Channel not found" });
+
+    // Clean up associated sensor data
+    await SensorData.deleteMany({ channelId: channel._id });
+
+    res.json({ message: "Channel and its data deleted successfully" });
+  } catch (error) {
+    console.error("❌ deleteChannel:", error);
+    res.status(500).json({ message: error.message });
+  }
 };
