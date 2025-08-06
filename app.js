@@ -3,10 +3,14 @@ import morgan from "morgan";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
+import swaggerUi from "swagger-ui-express";
+import YAML from "yamljs";
 
 import authRoutes from "./routes/authRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
 import { errorHandler, notFound } from "./middlewares/errorMiddleware.js";
+
+import { verifyApiKey } from "./middlewares/apiKeyMiddleware.js";
 
 const app = express();
 
@@ -21,9 +25,12 @@ app.use(express.json());
 const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100 });
 app.use(limiter);
 
+const swaggerDocument = YAML.load("./docs/swagger.yaml");
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+
 // ---------- Routes ----------
-app.use("/api/auth", authRoutes);
-app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/auth", verifyApiKey,authRoutes);
+app.use("/api/dashboard", verifyApiKey, dashboardRoutes);
 
 // ---------- Error Handling ----------
 app.use(notFound);

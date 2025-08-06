@@ -1,0 +1,164 @@
+openapi: 3.0.0
+info:
+  title: Node Sensor Grid API
+  description: API for User Registration, Login, and Role-based Dashboards with API Keys
+  version: 1.0.0
+servers:
+  - url: http://localhost:3000
+    description: Local Development Server
+
+tags:
+  - name: Auth
+    description: Authentication APIs
+  - name: Dashboard
+    description: Role-based Dashboard APIs
+
+paths:
+  /api/auth/register:
+    post:
+      tags:
+        - Auth
+      summary: Register a new user
+      description: Creates a new user account with role (user or superadmin).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - email
+                - password
+              properties:
+                name:
+                  type: string
+                  example: John Doe
+                email:
+                  type: string
+                  format: email
+                  example: john@example.com
+                password:
+                  type: string
+                  format: password
+                  example: MySecurePass123
+                role:
+                  type: string
+                  enum: [user, superadmin]
+                  default: user
+      responses:
+        "201":
+          description: User successfully registered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  _id:
+                    type: string
+                  name:
+                    type: string
+                  email:
+                    type: string
+                  role:
+                    type: string
+                  apiKey:
+                    type: string
+                  token:
+                    type: string
+        "400":
+          description: Bad request or user already exists
+
+  /api/auth/login:
+    post:
+      tags:
+        - Auth
+      summary: Login user
+      description: Authenticates a user and returns a JWT token and API key.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  example: john@example.com
+                password:
+                  type: string
+                  example: MySecurePass123
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  _id:
+                    type: string
+                  name:
+                    type: string
+                  email:
+                    type: string
+                  role:
+                    type: string
+                  apiKey:
+                    type: string
+                  token:
+                    type: string
+        "401":
+          description: Invalid credentials
+
+  /api/dashboard/user:
+    get:
+      tags:
+        - Dashboard
+      summary: Get User Dashboard
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: User dashboard access granted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Welcome John Doe, User Dashboard Access Granted
+        "403":
+          description: Forbidden (role not allowed)
+
+  /api/dashboard/superadmin:
+    get:
+      tags:
+        - Dashboard
+      summary: Get Super Admin Dashboard
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Super Admin dashboard access granted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Hello John Doe, Super Admin Dashboard Access Granted
+        "403":
+          description: Forbidden (role not allowed)
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

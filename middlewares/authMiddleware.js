@@ -30,3 +30,29 @@ export const roleCheck = (roles) => (req, res, next) => {
   }
   next();
 };
+
+
+export const verifyApiKey = async (req, res, next) => {
+  try {
+    // API key can come from headers or query or body
+    const apiKey =
+      req.headers["x-api-key"] ||
+      req.query.apiKey ||
+      req.body.apiKey;
+
+    if (!apiKey) {
+      return res.status(401).json({ message: "API key is required" });
+    }
+
+    const user = await User.findOne({ apiKey });
+    if (!user) {
+      return res.status(403).json({ message: "Invalid API key" });
+    }
+
+    // Attach user to request for downstream access
+    req.user = user;
+    next();
+  } catch (err) {
+    res.status(500).json({ message: "Server Error", error: err.message });
+  }
+};
