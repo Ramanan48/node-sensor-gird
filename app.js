@@ -12,6 +12,9 @@ import { errorHandler, notFound } from "./middlewares/errorMiddleware.js";
 
 import { verifyApiKey } from "./middlewares/apiKeyMiddleware.js";
 
+import channelRoutes from "./routes/channelRoutes.js";
+import sensorRoutes from "./routes/sensorRoutes.js";
+
 const app = express();
 
 // ---------- Security Middlewares ----------
@@ -31,6 +34,8 @@ app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 // ---------- Routes ----------
 app.use("/api/auth", verifyApiKey,authRoutes);
 app.use("/api/dashboard", verifyApiKey, dashboardRoutes);
+app.use("/api/channels",verifyApiKey, channelRoutes);
+app.use("/api/sensors", verifyApiKey,sensorRoutes);
 
 // ---------- Error Handling ----------
 app.use(notFound);
