@@ -21,8 +21,18 @@ router.post("/", verifyApiKey, createChannel);
 router.get("/", verifyApiKey, getMyChannels);
 
 // Overall statistics
-router.get("/stats/overview", verifyApiKey, getChannelsOverviewStats);
-router.get("/stats/fields",   verifyApiKey, getChannelFieldsCount);
+router.get(
+  ["/stats/overview", "/user/:userId/stats/overview"],
+  verifyApiKey,
+  getChannelsOverviewStats
+);
+
+// Field counts for “me” or any user by ID
+router.get(
+  ["/stats/fields", "/user/:userId/stats/fields"],
+  verifyApiKey,
+  getChannelFieldsCount
+);
 
 // Per-channel stats
 router.get("/:channelId/stats", verifyApiKey, getChannelRequestStats);
