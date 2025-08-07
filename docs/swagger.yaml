@@ -1,164 +1,201 @@
-openapi: 3.0.0
+openapi: 3.0.3
 info:
-  title: Node Sensor Grid API
-  description: API for User Registration, Login, and Role-based Dashboards with API Keys
+  title: IoT Sensor API
   version: 1.0.0
+  description: API for managing users, channels, and sensor data
 servers:
-  - url: http://localhost:3000
-    description: Local Development Server
-
-tags:
-  - name: Auth
-    description: Authentication APIs
-  - name: Dashboard
-    description: Role-based Dashboard APIs
-
-paths:
-  /api/auth/register:
-    post:
-      tags:
-        - Auth
-      summary: Register a new user
-      description: Creates a new user account with role (user or superadmin).
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - name
-                - email
-                - password
-              properties:
-                name:
-                  type: string
-                  example: John Doe
-                email:
-                  type: string
-                  format: email
-                  example: john@example.com
-                password:
-                  type: string
-                  format: password
-                  example: MySecurePass123
-                role:
-                  type: string
-                  enum: [user, superadmin]
-                  default: user
-      responses:
-        "201":
-          description: User successfully registered
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  _id:
-                    type: string
-                  name:
-                    type: string
-                  email:
-                    type: string
-                  role:
-                    type: string
-                  apiKey:
-                    type: string
-                  token:
-                    type: string
-        "400":
-          description: Bad request or user already exists
-
-  /api/auth/login:
-    post:
-      tags:
-        - Auth
-      summary: Login user
-      description: Authenticates a user and returns a JWT token and API key.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - email
-                - password
-              properties:
-                email:
-                  type: string
-                  example: john@example.com
-                password:
-                  type: string
-                  example: MySecurePass123
-      responses:
-        "200":
-          description: Login successful
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  _id:
-                    type: string
-                  name:
-                    type: string
-                  email:
-                    type: string
-                  role:
-                    type: string
-                  apiKey:
-                    type: string
-                  token:
-                    type: string
-        "401":
-          description: Invalid credentials
-
-  /api/dashboard/user:
-    get:
-      tags:
-        - Dashboard
-      summary: Get User Dashboard
-      security:
-        - bearerAuth: []
-      responses:
-        "200":
-          description: User dashboard access granted
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: Welcome John Doe, User Dashboard Access Granted
-        "403":
-          description: Forbidden (role not allowed)
-
-  /api/dashboard/superadmin:
-    get:
-      tags:
-        - Dashboard
-      summary: Get Super Admin Dashboard
-      security:
-        - bearerAuth: []
-      responses:
-        "200":
-          description: Super Admin dashboard access granted
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: Hello John Doe, Super Admin Dashboard Access Granted
-        "403":
-          description: Forbidden (role not allowed)
+  - url: http://localhost:5000/api
 
 components:
   securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: x-api-key
+
+  schemas:
+    AuthResponse:
+      type: object
+      properties:
+        _id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+        apiKey:
+          type: string
+        token:
+          type: string
+
+    RegisterUser:
+      type: object
+      required: [name, email, password]
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        password:
+          type: string
+        role:
+          type: string
+
+    LoginUser:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+
+    Channel:
+      type: object
+      properties:
+        channel_id:
+          type: string
+        projectName:
+          type: string
+        description:
+          type: string
+        fields:
+          type: array
+          items:
+            type: string
+
+security:
+  - ApiKeyAuth: []
+
+paths:
+  /auth/register:
+    post:
+      summary: Register a new user
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterUser'
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+
+  /auth/login:
+    post:
+      summary: Login a user
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginUser'
+      responses:
+        '200':
+          description: Successful login
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+
+  /auth/me:
+    get:
+      summary: Get current logged-in user
+      tags: [Auth]
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: User data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+
+  /channels:
+    post:
+      summary: Create a new channel
+      tags: [Channels]
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Channel'
+      responses:
+        '201':
+          description: Channel created
+
+    get:
+      summary: Get all my channels
+      tags: [Channels]
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: List of channels
+
+  /channels/{channelId}/data:
+    post:
+      summary: Send sensor data to a channel
+      tags: [Sensors]
+      parameters:
+        - in: path
+          name: channelId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              example:
+                temperature: 23.5
+                humidity: 70
+      responses:
+        '201':
+          description: Data stored
+
+  /channels/{channelId}/latest:
+    get:
+      summary: Get latest data from a channel
+      tags: [Sensors]
+      parameters:
+        - in: path
+          name: channelId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Latest data
+
+  /channels/{channelId}/history:
+    get:
+      summary: Get historical data from a channel
+      tags: [Sensors]
+      parameters:
+        - in: path
+          name: channelId
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Historical sensor data

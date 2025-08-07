@@ -11,6 +11,7 @@ import sensorRoutes from "./routes/sensorRoutes.js";
 
 import { verifyApiKey } from "./middlewares/apiKeyMiddleware.js";
 import { notFound, errorHandler } from "./middlewares/errorMiddleware.js";
+import docsRoute from "./routes/docs.js";
 
 const app = express();
 
@@ -26,9 +27,13 @@ app.use(cors({ origin: "*", methods: ["GET","POST","PUT","DELETE","OPTIONS"] }))
 app.use(morgan("dev"));
 app.use(express.json());
 
+app.use("/api/docs", docsRoute);
+
 // Rate limiting (100 requests per 15m per IP)
 const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100 });
 app.use(limiter);
+
+
 
 // Routes
 app.use("/api/auth",verifyApiKey, authRoutes);
