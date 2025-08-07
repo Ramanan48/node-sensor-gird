@@ -138,3 +138,84 @@ export const getChannelFieldsCount = async (req, res) => {
 /**
  * Other channel endpoints (getChannelById, updateChannel, deleteChannel) remain unchanged...
  */
+
+/**
+ * GET /api/channels/:channelId
+ * Fetch a single channel (must belong to req.user), including its recent history.
+ */
+export const getChannelById = async (req, res) => {
+  try {
+    const { channelId } = req.params;
+    const channel = await Channel
+      .findOne({ channel_id: channelId, userId: req.user._id })
+      .lean();
+    if (!channel) {
+      return res.status(404).json({ message: "Channel not found" });
+    }
+
+    const history = await SensorData
+      .find({ channelId: channel._id })
+      .sort({ createdAt: -1 })
+      .limit(parseInt(req.query.limit, 10) || 50)
+      .lean();
+
+    return res.status(200).json({ ...channel, history });
+  } catch (err) {
+    console.error("getChannelById:", err);
+    return res.status(500).json({ message: "Error retrieving channel data" });
+  }
+};
+
+/**
+ * PUT /api/channels/:channelId
+ * Update channel metadata (projectName, description, fields).
+ */
+export const updateChannel = async (req, res) => {
+  try {
+    const { channelId } = req.params;
+    const { projectName, description, fields } = req.body;
+
+    const channel = await Channel.findOne({
+      channel_id: channelId,
+      userId: req.user._id
+    });
+    if (!channel) {
+      return res.status(404).json({ message: "Channel not found" });
+    }
+
+    if (projectName !== undefined) channel.projectName = projectName;
+    if (description !== undefined) channel.description = description;
+    if (fields !== undefined) channel.fields = fields;
+
+    await channel.save();
+    return res.status(200).json({ message: "Channel updated", channel });
+  } catch (err) {
+    console.error("updateChannel:", err);
+    return res.status(500).json({ message: "Failed to update channel" });
+  }
+};
+
+/**
+ * DELETE /api/channels/:channelId
+ * Remove a channel and all its sensor data.
+ */
+export const deleteChannel = async (req, res) => {
+  try {
+    const { channelId } = req.params;
+
+    const channel = await Channel.findOneAndDelete({
+      channel_id: channelId,
+      userId: req.user._id
+    });
+    if (!channel) {
+      return res.status(404).json({ message: "Channel not found" });
+    }
+
+    await SensorData.deleteMany({ channelId: channel._id });
+    // 204 No Content, since the resource is gone
+    return res.status(204).send();
+  } catch (err) {
+    console.error("deleteChannel:", err);
+    return res.status(500).json({ message: "Failed to delete channel" });
+  }
+};
