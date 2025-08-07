@@ -118,35 +118,41 @@ export const getChannelRequestStats = async (req, res) => {
 export const getChannelsOverviewStats = async (req, res) => {
   try {
     const userId = req.user._id;
+    // fetch only this user’s channels
     const channels = await Channel.find({ userId }).lean();
+
     const totalChannels = channels.length;
-    const totalFields = channels.reduce((sum, ch) => sum + (ch.fields?.length || 0), 0);
+    const totalFields   = channels.reduce((sum, ch) => sum + (ch.fields?.length || 0), 0);
+
     const totalRequests = await SensorData.countDocuments({
       channelId: { $in: channels.map(ch => ch._id) }
     });
-    res.json({ totalChannels, totalFields, totalRequests });
+
+    return res.status(200).json({ totalChannels, totalFields, totalRequests });
   } catch (err) {
     console.error("getChannelsOverviewStats:", err);
-    res.status(500).json({ message: "Failed to compute overview stats" });
+    return res.status(500).json({ message: "Failed to compute overview stats" });
   }
 };
 
 /**
  * GET /api/channels/stats/fields
- * Get per-channel field counts
+ * Returns each channel’s field count for the logged-in user
  */
 export const getChannelFieldsCount = async (req, res) => {
   try {
     const userId = req.user._id;
     const channels = await Channel.find({ userId }).lean();
+
     const counts = channels.map(ch => ({
       channelId: ch.channel_id,
       fieldCount: ch.fields?.length || 0
     }));
-    res.json({ counts });
+
+    return res.status(200).json({ counts });
   } catch (err) {
     console.error("getChannelFieldsCount:", err);
-    res.status(500).json({ message: "Failed to compute fields count" });
+    return res.status(500).json({ message: "Failed to compute fields count" });
   }
 };
 
