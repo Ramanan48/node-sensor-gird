@@ -6,7 +6,10 @@ import {
   getChannelById,
   updateChannel,
   deleteChannel,
-  getChannelsByUserId
+  getChannelsByUserId,
+  getChannelsOverviewStats,
+  getChannelFieldsCount,
+  getChannelRequestStats
 } from "../controllers/channelController.js";
 import { verifyApiKey } from "../middlewares/apiKeyMiddleware.js";
 
@@ -35,6 +38,24 @@ router.get("/user/:userId", verifyApiKey, getChannelsByUserId);
  * @desc Get a single channel with history
  */
 router.get("/:channelId", verifyApiKey, getChannelById);
+
+/**
+ * @route GET /api/channels/:channelId/stats
+ * @desc Get per-channel request and entry stats
+ */
+router.get("/:channelId/stats", verifyApiKey, getChannelRequestStats);
+
+/**
+ * @route GET /api/channels/stats/overview
+ * @desc Get overall channels overview: total channels, total fields, total requests
+ */
+router.get("/stats/overview", verifyApiKey, getChannelsOverviewStats);
+
+/**
+ * @route GET /api/channels/stats/fields
+ * @desc Get count of all fields across all channels for the user
+ */
+router.get("/stats/fields", verifyApiKey, getChannelFieldsCount);
 
 /**
  * @route PUT /api/channels/:channelId
