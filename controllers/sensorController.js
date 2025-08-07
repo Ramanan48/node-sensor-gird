@@ -1,3 +1,4 @@
+// controllers/sensorController.js
 import * as sensorService from "../services/sensorService.js";
 
 /**

@@ -1,33 +1,30 @@
+// services/sensorService.js
 import Channel from "../models/Channel.js";
 import SensorData from "../models/SensorData.js";
-import { io } from "../socket/socketServer.js";
+import { io } from "../socket/sensorSocket.js";
 
 /**
- * Store sensor data—no restriction on keys—and broadcast via WebSocket.
+ * Store sensor data with no restriction on keys, then broadcast.
  */
 export const storeSensorData = async (channelId, body) => {
-  // Accept either { data: {...} } or raw {...}
   const payload = body.data || body;
   if (!payload || typeof payload !== "object") {
     throw { statusCode: 400, message: "Invalid data format" };
   }
 
-  // Ensure the channel exists
   const channel = await Channel.findOne({ channel_id: channelId });
   if (!channel) throw { statusCode: 404, message: "Channel not found" };
 
-  // Create the record with whatever keys the client provided
   const entry = await SensorData.create({
     channelId: channel._id,
-    data: payload
+    data: payload,
   });
 
-  // Broadcast on the channel room
   if (io && typeof io.to === "function") {
     io.to(channelId).emit("sensor:update", {
       channelId,
       timestamp: entry.createdAt,
-      data: payload
+      data: payload,
     });
   }
 
@@ -35,7 +32,7 @@ export const storeSensorData = async (channelId, body) => {
 };
 
 /**
- * Fetch the latest sensor data entry for a channel.
+ * Fetch the latest data entry for a channel.
  */
 export const fetchLatestData = async (channelId) => {
   const channel = await Channel.findOne({ channel_id: channelId });
@@ -50,7 +47,7 @@ export const fetchLatestData = async (channelId) => {
 };
 
 /**
- * Fetch historical sensor data entries, optional date range & limit.
+ * Fetch historical data entries, with optional start/end and limit.
  */
 export const fetchChannelHistory = async (channelId, { start, end, limit }) => {
   const channel = await Channel.findOne({ channel_id: channelId });
