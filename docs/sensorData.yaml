@@ -1,0 +1,79 @@
+paths:
+  /sensors/{channelId}/data:
+    post:
+      tags: [SensorData]
+      summary: Post sensor data
+      parameters:
+        - name: channelId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data:
+                  type: object
+                  example:
+                    temperature: 25.5
+                    humidity: 60
+      responses:
+        '201':
+          description: Data stored
+        '400':
+          description: Invalid input
+        '404':
+          description: Channel not found
+        '500':
+          description: Server error
+
+  /sensors/{channelId}/latest:
+    get:
+      tags: [SensorData]
+      summary: Get latest sensor data
+      parameters:
+        - name: channelId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Latest data
+        '404':
+          description: Channel not found
+
+  /sensors/{channelId}/history:
+    get:
+      tags: [SensorData]
+      summary: Get sensor data history
+      parameters:
+        - name: channelId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: start
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: end
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Historical data
+        '404':
+          description: Channel not found

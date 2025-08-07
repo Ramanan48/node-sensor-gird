@@ -15,7 +15,11 @@ import { verifyApiKey } from "./middlewares/apiKeyMiddleware.js";
 import channelRoutes from "./routes/channelRoutes.js";
 import sensorRoutes from "./routes/sensorRoutes.js";
 
+import setupSwagger from "./swagger.js";
+
 const app = express();
+
+setupSwagger(app);
 
 // ---------- Security Middlewares ----------
 app.use(helmet());
@@ -28,8 +32,8 @@ app.use(express.json());
 const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100 });
 app.use(limiter);
 
-const swaggerDocument = YAML.load("./docs/swagger.yaml");
-app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+// const swaggerDocument = YAML.load("./docs/swagger.yaml");
+// app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
 // ---------- Routes ----------
 app.use("/api/auth", verifyApiKey,authRoutes);

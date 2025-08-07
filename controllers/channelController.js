@@ -2,15 +2,17 @@ import Channel from "../models/Channel.js";
 import SensorData from "../models/SensorData.js";
 import { generateChannelId } from "../utils/generateChannelId.js";
 
-// ✅ Create a new channel
+/**
+ * Create a new channel
+ */
 export const createChannel = async (req, res) => {
   try {
     const { projectName, description, fields } = req.body;
-    if (!projectName || !fields || !fields.length) {
-      return res.status(400).json({ message: "Project name and at least 1 field are required" });
+    if (!projectName || !fields?.length) {
+      return res.status(400).json({ message: "Project name and at least one field are required" });
     }
 
-    const channel = await Channel.create({
+    const newChannel = await Channel.create({
       channel_id: generateChannelId(),
       userId: req.user._id,
       projectName,
@@ -18,37 +20,67 @@ export const createChannel = async (req, res) => {
       fields
     });
 
-    res.status(201).json({ message: "Channel created successfully", channel });
-  } catch (error) {
-    console.error("❌ createChannel:", error);
-    res.status(500).json({ message: error.message });
+    res.status(201).json({ message: "Channel created", channel: newChannel });
+  } catch (err) {
+    console.error("createChannel:", err);
+    res.status(500).json({ message: "Internal server error" });
   }
 };
 
-// ✅ Get all channels for the logged-in user with latest sensor data
+/**
+ * Get all channels for logged-in user (with latest sensor data)
+ */
 export const getMyChannels = async (req, res) => {
   try {
     const channels = await Channel.find({ userId: req.user._id }).lean();
 
-    // Attach latest sensor data for each channel
-    const result = await Promise.all(
-      channels.map(async (ch) => {
-        const latestData = await SensorData.findOne({ channelId: ch._id })
-          .sort({ createdAt: -1 })
-          .lean();
+    const enriched = await Promise.all(channels.map(async (ch) => {
+      const latest = await SensorData.findOne({ channelId: ch._id }).sort({ createdAt: -1 }).lean();
+      const count = await SensorData.countDocuments({ channelId: ch._id });
+      return {
+        ...ch,
+        latestData: latest?.data || null,
+        lastUpdate: latest?.createdAt || null,
+        totalEntries: count
+      };
+    }));
 
-        return { ...ch, latestData: latestData?.data || null, lastUpdate: latestData?.createdAt || null };
-      })
-    );
-
-    res.json(result);
-  } catch (error) {
-    console.error("❌ getMyChannels:", error);
-    res.status(500).json({ message: error.message });
+    res.json({ count: enriched.length, channels: enriched });
+  } catch (err) {
+    console.error("getMyChannels:", err);
+    res.status(500).json({ message: "Failed to retrieve channels" });
   }
 };
 
-// ✅ Get single channel with full history
+/**
+ * Get channels by user ID
+ */
+export const getChannelsByUserId = async (req, res) => {
+  try {
+    const userId = req.params.userId || req.user?._id;
+    const channels = await Channel.find({ userId }).lean();
+
+    const enriched = await Promise.all(channels.map(async (ch) => {
+      const latest = await SensorData.findOne({ channelId: ch._id }).sort({ createdAt: -1 }).lean();
+      const count = await SensorData.countDocuments({ channelId: ch._id });
+      return {
+        ...ch,
+        latestData: latest?.data || null,
+        lastUpdate: latest?.createdAt || null,
+        totalEntries: count
+      };
+    }));
+
+    res.json({ count: enriched.length, channels: enriched });
+  } catch (err) {
+    console.error("getChannelsByUserId:", err);
+    res.status(500).json({ message: "Error retrieving user channels" });
+  }
+};
+
+/**
+ * Get a single channel with full history
+ */
 export const getChannelById = async (req, res) => {
   try {
     const channel = await Channel.findOne({ channel_id: req.params.channelId, userId: req.user._id }).lean();
@@ -60,17 +92,18 @@ export const getChannelById = async (req, res) => {
       .lean();
 
     res.json({ ...channel, history });
-  } catch (error) {
-    console.error("❌ getChannelById:", error);
-    res.status(500).json({ message: error.message });
+  } catch (err) {
+    console.error("getChannelById:", err);
+    res.status(500).json({ message: "Error retrieving channel data" });
   }
 };
 
-// ✅ Update a channel (partial update)
+/**
+ * Update an existing channel
+ */
 export const updateChannel = async (req, res) => {
   try {
     const { projectName, description, fields } = req.body;
-
     const channel = await Channel.findOne({ channel_id: req.params.channelId, userId: req.user._id });
     if (!channel) return res.status(404).json({ message: "Channel not found" });
 
@@ -79,62 +112,25 @@ export const updateChannel = async (req, res) => {
     if (fields) channel.fields = fields;
 
     await channel.save();
-    res.json({ message: "Channel updated successfully", channel });
-  } catch (error) {
-    console.error("❌ updateChannel:", error);
-    res.status(500).json({ message: error.message });
+    res.json({ message: "Channel updated", channel });
+  } catch (err) {
+    console.error("updateChannel:", err);
+    res.status(500).json({ message: "Failed to update channel" });
   }
 };
 
-// ✅ Delete channel and its sensor data
+/**
+ * Delete a channel and its sensor data
+ */
 export const deleteChannel = async (req, res) => {
   try {
-    const channel = await Channel.findOneAndDelete({
-      channel_id: req.params.channelId,
-      userId: req.user._id,
-    });
-
+    const channel = await Channel.findOneAndDelete({ channel_id: req.params.channelId, userId: req.user._id });
     if (!channel) return res.status(404).json({ message: "Channel not found" });
 
-    // Clean up associated sensor data
     await SensorData.deleteMany({ channelId: channel._id });
-
-    res.json({ message: "Channel and its data deleted successfully" });
-  } catch (error) {
-    console.error("❌ deleteChannel:", error);
-    res.status(500).json({ message: error.message });
-  }
-};
-
-
-export const getChannelsByUserId = async (req, res) => {
-  try {
-    const userId = req.params.userId || req.user?._id; // allow logged-in or param
-
-    const channels = await Channel.find({ userId }).lean();
-
-    const result = await Promise.all(
-      channels.map(async (ch) => {
-        // Latest data for channel
-        const latestData = await SensorData.findOne({ channelId: ch._id })
-          .sort({ createdAt: -1 })
-          .lean();
-
-        // Count total entries for analytics
-        const totalEntries = await SensorData.countDocuments({ channelId: ch._id });
-
-        return {
-          ...ch,
-          latestData: latestData?.data || null,
-          lastUpdate: latestData?.createdAt || null,
-          totalEntries
-        };
-      })
-    );
-
-    res.json({ count: result.length, channels: result });
-  } catch (error) {
-    console.error("❌ getChannelsByUserId:", error);
-    res.status(500).json({ message: error.message });
+    res.json({ message: "Channel and data deleted" });
+  } catch (err) {
+    console.error("deleteChannel:", err);
+    res.status(500).json({ message: "Failed to delete channel" });
   }
 };
