@@ -3,8 +3,6 @@ import morgan from "morgan";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
-import swaggerUi from "swagger-ui-express";
-import YAML from "yamljs";
 
 import authRoutes from "./routes/authRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
@@ -15,11 +13,7 @@ import { verifyApiKey } from "./middlewares/apiKeyMiddleware.js";
 import channelRoutes from "./routes/channelRoutes.js";
 import sensorRoutes from "./routes/sensorRoutes.js";
 
-import setupSwagger from "./swagger.js";
-
 const app = express();
-
-setupSwagger(app);
 
 // ---------- Security Middlewares ----------
 app.use(helmet());
