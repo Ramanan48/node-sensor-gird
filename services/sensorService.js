@@ -1,6 +1,6 @@
 import Channel from "../models/Channel.js";
 import SensorData from "../models/SensorData.js";
-import { io } from "../socket/socketServer.js"; // socket.io instance
+import { io } from "../socket/sensorSocket.js"; // socket.io instance
 
 export const storeSensorData = async (channelId, body) => {
   const data = body.data || body;
