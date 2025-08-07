@@ -2,9 +2,14 @@ openapi: 3.0.3
 info:
   title: IoT Sensor API
   version: 1.0.0
-  description: API for managing users, channels, and sensor data
+  description: |
+    REST + MQTT-ready API for managing users, channels, and sensor data.
 servers:
+  - url: https://node-sensor-gird.onrender.com/api
   - url: http://localhost:5000/api
+
+security:
+  - ApiKeyAuth: []
 
 components:
   securitySchemes:
@@ -14,6 +19,12 @@ components:
       name: x-api-key
 
   schemas:
+    Error:
+      type: object
+      properties:
+        message:
+          type: string
+
     AuthResponse:
       type: object
       properties:
@@ -32,48 +43,146 @@ components:
 
     RegisterUser:
       type: object
-      required: [name, email, password]
+      required:
+        - name
+        - email
+        - password
       properties:
         name:
           type: string
         email:
           type: string
+          format: email
         password:
           type: string
         role:
           type: string
+          enum:
+            - superadmin
+            - user
 
     LoginUser:
       type: object
-      required: [email, password]
+      required:
+        - email
+        - password
       properties:
         email:
           type: string
+          format: email
         password:
           type: string
 
     Channel:
       type: object
+      required:
+        - projectName
+        - fields
       properties:
         channel_id:
           type: string
+          description: 7-digit unique ID
         projectName:
           type: string
         description:
           type: string
+          nullable: true
         fields:
           type: array
           items:
-            type: string
+            type: object
+            required:
+              - name
+            properties:
+              name:
+                type: string
+              unit:
+                type: string
 
-security:
-  - ApiKeyAuth: []
+    ChannelResponse:
+      allOf:
+        - $ref: '#/components/schemas/Channel'
+        - type: object
+          properties:
+            _id:
+              type: string
+            userId:
+              type: string
+            createdAt:
+              type: string
+              format: date-time
+
+    ChannelListResponse:
+      type: object
+      properties:
+        count:
+          type: integer
+        channels:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChannelResponse'
+
+    SensorData:
+      type: object
+      required:
+        - data
+      properties:
+        _id:
+          type: string
+        channelId:
+          type: string
+        data:
+          type: object
+        createdAt:
+          type: string
+          format: date-time
+
+    SensorDataList:
+      type: array
+      items:
+        $ref: '#/components/schemas/SensorData'
+
+    OverviewStats:
+      type: object
+      properties:
+        totalChannels:
+          type: integer
+        totalFields:
+          type: integer
+        totalRequests:
+          type: integer
+
+    ChannelStats:
+      type: object
+      properties:
+        channelId:
+          type: string
+        totalEntries:
+          type: integer
+        lastUpdate:
+          type: string
+          format: date-time
+          nullable: true
+
+    FieldsCount:
+      type: object
+      properties:
+        counts:
+          type: array
+          items:
+            type: object
+            properties:
+              channelId:
+                type: string
+              fieldCount:
+                type: integer
 
 paths:
   /auth/register:
     post:
       summary: Register a new user
-      tags: [Auth]
+      tags:
+        - Auth
       requestBody:
         required: true
         content:
@@ -82,16 +191,23 @@ paths:
               $ref: '#/components/schemas/RegisterUser'
       responses:
         '201':
-          description: User created
+          description: User registered
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /auth/login:
     post:
       summary: Login a user
-      tags: [Auth]
+      tags:
+        - Auth
       requestBody:
         required: true
         content:
@@ -105,25 +221,36 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
-  /auth/me:
-    get:
-      summary: Get current logged-in user
-      tags: [Auth]
+  /auth/logout:
+    post:
+      summary: Logout current user
+      tags:
+        - Auth
       security:
         - ApiKeyAuth: []
       responses:
         '200':
-          description: User data
+          description: Logout message
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthResponse'
+                type: object
+                properties:
+                  message:
+                    type: string
 
   /channels:
     post:
       summary: Create a new channel
-      tags: [Channels]
+      tags:
+        - Channels
       security:
         - ApiKeyAuth: []
       requestBody:
@@ -135,20 +262,273 @@ paths:
       responses:
         '201':
           description: Channel created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
     get:
       summary: Get all my channels
-      tags: [Channels]
+      tags:
+        - Channels
       security:
         - ApiKeyAuth: []
       responses:
         '200':
           description: List of channels
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelListResponse'
 
-  /channels/{channelId}/data:
+  /channels/stats/overview:
+    get:
+      summary: Get overall stats for authenticated user
+      tags:
+        - Channels
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Overview statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OverviewStats'
+
+  /channels/stats/fields:
+    get:
+      summary: Get field counts per channel for authenticated user
+      tags:
+        - Channels
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Field counts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FieldsCount'
+                
+  paths:
+  /channels/user/{userId}/stats/overview:
+    get:
+      summary: Get overall stats for a specific user
+      tags:
+        - Channels
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+          description: ID of the user to retrieve stats for
+      responses:
+        '200':
+          description: Overview statistics for the specified user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OverviewStats'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /channels/user/{userId}/stats/fields:
+    get:
+      summary: Get field counts per channel for a specific user
+      tags:
+        - Channels
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+          description: ID of the user to retrieve field counts for
+      responses:
+        '200':
+          description: Field counts per channel for the specified user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FieldsCount'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /channels/{channelId}/stats:
+    get:
+      summary: Get a single channel’s stats
+      tags:
+        - Channels
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - in: path
+          name: channelId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Channel statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelStats'
+        '404':
+          description: Channel not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /channels/user/{userId}:
+    get:
+      summary: Get all channels for any user (admin)
+      tags:
+        - Channels
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of channels
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelListResponse'
+
+  /channels/{channelId}:
+    get:
+      summary: Get a single channel with history
+      tags:
+        - Channels
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - in: path
+          name: channelId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Channel details + history
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ChannelResponse'
+                  - type: object
+                    properties:
+                      history:
+                        $ref: '#/components/schemas/SensorDataList'
+        '404':
+          description: Channel not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    put:
+      summary: Update a channel
+      tags:
+        - Channels
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - in: path
+          name: channelId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                projectName:
+                  type: string
+                description:
+                  type: string
+                fields:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      unit:
+                        type: string
+      responses:
+        '200':
+          description: Updated channel
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelResponse'
+        '404':
+          description: Channel not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      summary: Delete a channel
+      tags:
+        - Channels
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - in: path
+          name: channelId
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Channel deleted
+        '404':
+          description: Channel not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /sensors/{channelId}/data:
     post:
       summary: Send sensor data to a channel
-      tags: [Sensors]
+      tags:
+        - Sensors
+      security:
+        - ApiKeyAuth: []
       parameters:
         - in: path
           name: channelId
@@ -167,11 +547,26 @@ paths:
       responses:
         '201':
           description: Data stored
+        '400':
+          description: Invalid payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Channel not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
-  /channels/{channelId}/latest:
+  /sensors/{channelId}/latest:
     get:
       summary: Get latest data from a channel
-      tags: [Sensors]
+      tags:
+        - Sensors
+      security:
+        - ApiKeyAuth: []
       parameters:
         - in: path
           name: channelId
@@ -180,12 +575,25 @@ paths:
             type: string
       responses:
         '200':
-          description: Latest data
+          description: Latest sensor data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SensorData'
+        '404':
+          description: Channel not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
-  /channels/{channelId}/history:
+  /sensors/{channelId}/history:
     get:
       summary: Get historical data from a channel
-      tags: [Sensors]
+      tags:
+        - Sensors
+      security:
+        - ApiKeyAuth: []
       parameters:
         - in: path
           name: channelId
@@ -196,6 +604,27 @@ paths:
           name: limit
           schema:
             type: integer
+            default: 50
+        - in: query
+          name: start
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: end
+          schema:
+            type: string
+            format: date
       responses:
         '200':
-          description: Historical sensor data
+          description: Array of historical sensor data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SensorDataList'
+        '404':
+          description: Channel not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
