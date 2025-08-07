@@ -6,36 +6,37 @@ import rateLimit from "express-rate-limit";
 
 import authRoutes from "./routes/authRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
-import { errorHandler, notFound } from "./middlewares/errorMiddleware.js";
-
-import { verifyApiKey } from "./middlewares/apiKeyMiddleware.js";
-
 import channelRoutes from "./routes/channelRoutes.js";
 import sensorRoutes from "./routes/sensorRoutes.js";
 
+import { verifyApiKey } from "./middlewares/apiKeyMiddleware.js";
+import { notFound, errorHandler } from "./middlewares/errorMiddleware.js";
+
 const app = express();
 
-// ---------- Security Middlewares ----------
+// Trust reverse proxy headers (X-Forwarded-For, etc.)
+app.set("trust proxy", 1);
+
+// Security middlewares
 app.use(helmet());
-app.use(cors());
-// app.use(xss());
+
+// Allow all origins and methods
+app.use(cors({ origin: "*", methods: ["GET","POST","PUT","DELETE","OPTIONS"] }));
+
 app.use(morgan("dev"));
 app.use(express.json());
 
-// Rate limiting: 100 requests/15 minutes per IP
+// Rate limiting (100 requests per 15m per IP)
 const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100 });
 app.use(limiter);
 
-// const swaggerDocument = YAML.load("./docs/swagger.yaml");
-// app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
-
-// ---------- Routes ----------
-app.use("/api/auth", verifyApiKey,authRoutes);
-app.use("/api/dashboard", verifyApiKey, dashboardRoutes);
+// Routes
+app.use("/api/auth",verifyApiKey, authRoutes);
+app.use("/api/dashboard",verifyApiKey, dashboardRoutes);
 app.use("/api/channels",verifyApiKey, channelRoutes);
-app.use("/api/sensors", verifyApiKey,sensorRoutes);
+app.use("/api/sensors",verifyApiKey, sensorRoutes);
 
-// ---------- Error Handling ----------
+// 404 + error handlers
 app.use(notFound);
 app.use(errorHandler);
 
