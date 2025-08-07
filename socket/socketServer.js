@@ -1,4 +1,3 @@
-// socket/socketServer.js
 import { Server } from "socket.io";
 
 let io;
@@ -21,7 +20,4 @@ export const initSocket = (httpServer) => {
   return io;
 };
 
-/**
- * Once initSocket() has been called, you can import `io` to broadcast.
- */
 export { io };

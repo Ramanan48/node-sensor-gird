@@ -1,10 +1,9 @@
-// services/sensorService.js
 import Channel from "../models/Channel.js";
 import SensorData from "../models/SensorData.js";
-import { io } from "../socket/sensorSocket.js";
+import { io } from "../socket/socketServer.js";   // <-- note the path
 
 /**
- * Store sensor data with no restriction on keys, then broadcast.
+ * Store sensor data (no key restriction) and broadcast via WebSocket.
  */
 export const storeSensorData = async (channelId, body) => {
   const payload = body.data || body;
@@ -17,23 +16,20 @@ export const storeSensorData = async (channelId, body) => {
 
   const entry = await SensorData.create({
     channelId: channel._id,
-    data: payload,
+    data: payload
   });
 
   if (io && typeof io.to === "function") {
     io.to(channelId).emit("sensor:update", {
       channelId,
       timestamp: entry.createdAt,
-      data: payload,
+      data: payload
     });
   }
 
   return { message: "Data stored", entryId: entry._id };
 };
 
-/**
- * Fetch the latest data entry for a channel.
- */
 export const fetchLatestData = async (channelId) => {
   const channel = await Channel.findOne({ channel_id: channelId });
   if (!channel) throw { statusCode: 404, message: "Channel not found" };
@@ -46,9 +42,6 @@ export const fetchLatestData = async (channelId) => {
   ) || {};
 };
 
-/**
- * Fetch historical data entries, with optional start/end and limit.
- */
 export const fetchChannelHistory = async (channelId, { start, end, limit }) => {
   const channel = await Channel.findOne({ channel_id: channelId });
   if (!channel) throw { statusCode: 404, message: "Channel not found" };
