@@ -6,31 +6,31 @@ import asyncHandler from "express-async-handler";
 const generateToken = (id, role) =>
   jwt.sign({ id, role }, process.env.JWT_SECRET, { expiresIn: "7d" });
 
-// ---------- Register User ----------
-export const registerUser = asyncHandler(async (req, res) => {
-  const { name, email, password, role } = req.body;
+  // ---------- Register User ----------
+  export const registerUser = asyncHandler(async (req, res) => {
+    const { name, email, password, role } = req.body;
 
-  if (!name || !email || !password) {
-    res.status(400);
-    throw new Error("All fields are required");
-  }
+    if (!name || !email || !password) {
+      res.status(400);
+      throw new Error("All fields are required");
+    }
 
-  const userExists = await User.findOne({ email });
-  if (userExists) {
-    res.status(400);
-    throw new Error("User already exists");
-  }
+    const userExists = await User.findOne({ email });
+    if (userExists) {
+      res.status(400);
+      throw new Error("User already exists");
+    }
 
-  const user = await User.create({ name, email, password, role });
-  res.status(201).json({
-    _id: user._id,
-    name: user.name,
-    email: user.email,
-    role: user.role,
-    apiKey: user.apiKey,
-    token: generateToken(user._id, user.role),
+    const user = await User.create({ name, email, password, role });
+    res.status(201).json({
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      apiKey: user.apiKey,
+      token: generateToken(user._id, user.role),
+    });
   });
-});
 
 // ---------- Login User ----------
 export const loginUser = asyncHandler(async (req, res) => {
