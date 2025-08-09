@@ -4,30 +4,66 @@ import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 
 /* ============================================================================
- * Utility helpers (pure, testable)
+ * Invariants
+ * ========================================================================== */
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error("[FATAL] JWT_SECRET is not configured");
+  throw new Error("JWT_SECRET is required");
+}
+
+/* ============================================================================
+ * Pure Utilities (testable)
  * ========================================================================== */
 
-/** Fast string check */
 const isNonEmptyString = (v) => typeof v === "string" && v.trim().length > 0;
 
-/** Normalize registration/login body */
-const normalizeAuthInput = ({ name, email, password, role, username }) => ({
+/** Normalize incoming body strings (NO username here) */
+const normalizeAuthInput = ({ name, email, password, role }) => ({
   name: isNonEmptyString(name) ? name.trim() : "",
   email: isNonEmptyString(email) ? email.trim().toLowerCase() : "",
   password: isNonEmptyString(password) ? password : "",
   role: isNonEmptyString(role) ? role : undefined,
-  username: isNonEmptyString(username) ? username.trim().toLowerCase() : undefined,
 });
 
-/** Create JWT (7 days) */
-const signToken = (user) => {
-  const payload = { sub: String(user._id), role: user.role };
-  return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "7d" });
+/** Minimal username sanitizer: lowercase, a–z0–9 only, length cap */
+const sanitizeToUsername = (str) =>
+  String(str || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "")
+    .slice(0, 24);
+
+/**
+ * Allocate a unique username derived from a seed (name/email local-part).
+ * Strategy:
+ *  1) try base
+ *  2) try base + 4-digit random for a few attempts
+ *  3) fallback base + count+1
+ * All O(1) expected with indexed username.
+ */
+const ensureUniqueUsername = async (seed) => {
+  const base = sanitizeToUsername(seed) || "user";
+  let candidate = base;
+
+  if (!(await User.exists({ username: candidate }))) return candidate;
+
+  for (let i = 0; i < 5; i++) {
+    const rand = Math.floor(Math.random() * 10000).toString().padStart(4, "0");
+    candidate = `${base}${rand}`.slice(0, 30);
+    if (!(await User.exists({ username: candidate }))) return candidate;
+  }
+
+  const count = await User.countDocuments({ username: new RegExp(`^${base}`, "i") });
+  return `${base}${count + 1}`.slice(0, 30);
 };
 
-/** Convert a mongoose user doc to public JSON (no secrets) */
+/** JWT (7 days) */
+const signToken = (user) =>
+  jwt.sign({ sub: String(user._id), role: user.role }, JWT_SECRET, { expiresIn: "7d" });
+
+/** Project a user doc to public JSON */
 const toPublicUser = (userDoc) => {
-  const u = userDoc.toObject ? userDoc.toObject() : userDoc;
+  const u = userDoc?.toObject ? userDoc.toObject() : userDoc;
   return {
     _id: String(u._id),
     name: u.name,
@@ -43,7 +79,7 @@ const toPublicUser = (userDoc) => {
   };
 };
 
-/** Parse duplicate key errors to precise, friendly messages */
+/** Duplicate-key friendly message */
 const parseDuplicateKey = (err) => {
   const msg = String(err?.message || "");
   if (msg.includes("email_1") || msg.toLowerCase().includes("email")) return "Email already in use";
@@ -52,7 +88,7 @@ const parseDuplicateKey = (err) => {
   return "Duplicate key";
 };
 
-/** Quick password sanity checks (adjust to your policy) */
+/** Basic password policy */
 const validatePassword = (pwd) => {
   if (pwd.length < 6) return "Password must be at least 6 characters";
   if (pwd.length > 128) return "Password too long";
@@ -65,56 +101,64 @@ const validatePassword = (pwd) => {
 
 /**
  * POST /api/auth/register
- * Body: { name, email, password, role?, username? }
- * Complexity: O(1) – single indexed lookups + single insert.
+ * Body: { name, email, password, role? }
+ * O(1) expected: indexed lookups; one insert.
+ * - Ignores any username in body; always auto-generates.
  */
 export const registerUser = asyncHandler(async (req, res) => {
-  const { name, email, password, role, username } = normalizeAuthInput(req.body);
+  const { name, email, password, role } = normalizeAuthInput(req.body);
 
-  // 1) Required fields
   if (!name || !email || !password) {
     return res.status(400).json({ message: "Name, email, and password are required" });
   }
 
-  // 2) Password policy
   const pwdErr = validatePassword(password);
   if (pwdErr) return res.status(400).json({ message: pwdErr });
 
-  // 3) Preflight O(1) existence checks on indexed fields
-  const [emailExists, usernameExists] = await Promise.all([
-    User.findOne({ email }).select("_id").lean(),
-    username ? User.findOne({ username }).select("_id").lean() : Promise.resolve(null),
-  ]);
-
+  // 1) email must be unique
+  const emailExists = await User.findOne({ email }).select("_id").lean();
   if (emailExists) return res.status(409).json({ message: "Email already in use" });
-  if (username && usernameExists) return res.status(409).json({ message: "Username already in use" });
 
-  // 4) Create user (pre-save hook hashes password)
-  try {
-    const doc = { name, email, password, provider: "local" };
-    if (role) doc.role = role;
-    if (username) doc.username = username;
+  // 2) always auto-generate a unique username
+  const seed = name || email.split("@")[0];
+  let allocatedUsername = await ensureUniqueUsername(seed);
 
-    const user = await User.create(doc);
-    const token = signToken(user);
+  // 3) create user (with small retry if username collides mid-air)
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const doc = {
+        name,
+        email,
+        password,           // hashed by model pre-save
+        provider: "local",
+        username: allocatedUsername,
+      };
+      if (role) doc.role = role;
 
-    return res.status(201).json({
-      user: toPublicUser(user),
-      token,
-    });
-  } catch (err) {
-    // Handle race on unique constraints (E11000)
-    if (err?.code === 11000) {
-      return res.status(409).json({ message: parseDuplicateKey(err) });
+      const user = await User.create(doc);
+      const token = signToken(user);
+      return res.status(201).json({ user: toPublicUser(user), token });
+    } catch (err) {
+      if (err?.code === 11000 && String(err?.message || "").toLowerCase().includes("username")) {
+        // regenerate and retry
+        allocatedUsername = await ensureUniqueUsername(seed);
+        continue;
+      }
+      if (err?.code === 11000) {
+        return res.status(409).json({ message: parseDuplicateKey(err) });
+      }
+      return res.status(500).json({ message: "Failed to register user" });
     }
-    return res.status(500).json({ message: "Failed to register user" });
   }
+
+  // if we somehow exhausted retries:
+  return res.status(500).json({ message: "Failed to allocate a unique username" });
 });
 
 /**
  * POST /api/auth/login
  * Body: { email, password }
- * Complexity: O(1) – single indexed lookup + one updateOne.
+ * O(1): single lookup + updateOne for lastLoginAt
  */
 export const loginUser = asyncHandler(async (req, res) => {
   const email = isNonEmptyString(req.body.email) ? req.body.email.trim().toLowerCase() : "";
@@ -124,7 +168,6 @@ export const loginUser = asyncHandler(async (req, res) => {
     return res.status(400).json({ message: "Email and password are required" });
   }
 
-  // fetch with password (select:false in schema)
   const user = await User.findOne({ email })
     .select("+password name email username role status apiKey provider lastLoginAt createdAt updatedAt")
     .exec();
@@ -136,20 +179,15 @@ export const loginUser = asyncHandler(async (req, res) => {
   const ok = await user.matchPassword(password);
   if (!ok) return res.status(401).json({ message: invalidMsg });
 
-  // update lastLoginAt without loading full doc back into memory
   void User.updateOne({ _id: user._id }, { $set: { lastLoginAt: new Date() } }).exec();
 
   const token = signToken(user);
-  return res.status(200).json({
-    user: toPublicUser(user),
-    token,
-  });
+  return res.status(200).json({ user: toPublicUser(user), token });
 });
 
 /**
  * GET /api/auth/me
- * Requires a JWT middleware (protect) that sets req.user = { _id, ... }
- * Complexity: O(1)
+ * Requires protect middleware to set req.user
  */
 export const getMe = asyncHandler(async (req, res) => {
   if (!req.user) return res.status(401).json({ message: "Not authenticated" });
@@ -164,8 +202,7 @@ export const getMe = asyncHandler(async (req, res) => {
 
 /**
  * POST /api/auth/logout
- * Stateless JWTs are cleared client-side. This endpoint is semantic.
- * Complexity: O(1)
+ * Stateless JWT — client discards token
  */
 export const logout = asyncHandler(async (_req, res) => {
   return res.status(200).json({ message: "Logged out" });
@@ -173,8 +210,7 @@ export const logout = asyncHandler(async (_req, res) => {
 
 /**
  * POST /api/auth/rotate-api-key
- * Rotates the user’s API key securely.
- * Complexity: O(1)
+ * O(1)
  */
 export const rotateApiKey = asyncHandler(async (req, res) => {
   const u = await User.findById(req.user._id).exec();
@@ -186,27 +222,24 @@ export const rotateApiKey = asyncHandler(async (req, res) => {
 
 /**
  * PATCH /api/auth/profile
- * Optional: update profile fields (name, username). Email change could be added with re-verify flow.
- * Complexity: O(1)
+ * Body: { name? }
+ * Username is immutable because it is auto-generated by the system.
  */
 export const updateProfile = asyncHandler(async (req, res) => {
   const id = req.user?._id;
   if (!id) return res.status(401).json({ message: "Not authenticated" });
 
   const name = isNonEmptyString(req.body.name) ? req.body.name.trim() : undefined;
-  const username = isNonEmptyString(req.body.username) ? req.body.username.trim().toLowerCase() : undefined;
+
+  // Explicitly disallow username changes
+  if (typeof req.body.username !== "undefined") {
+    return res.status(400).json({ message: "Username cannot be changed" });
+  }
+
+  const update = {};
+  if (name !== undefined) update.name = name;
 
   try {
-    // If username provided, ensure not taken by someone else
-    if (username) {
-      const exists = await User.findOne({ username, _id: { $ne: id } }).select("_id").lean();
-      if (exists) return res.status(409).json({ message: "Username already in use" });
-    }
-
-    const update = {};
-    if (name !== undefined) update.name = name;
-    if (username !== undefined) update.username = username;
-
     const user = await User.findByIdAndUpdate(id, { $set: update }, { new: true })
       .select("name email username role status apiKey provider createdAt updatedAt lastLoginAt")
       .lean();
@@ -219,4 +252,34 @@ export const updateProfile = asyncHandler(async (req, res) => {
     }
     return res.status(500).json({ message: "Failed to update profile" });
   }
+});
+
+/**
+ * PATCH /api/auth/change-password
+ * Body: { currentPassword, newPassword }
+ * O(1)
+ */
+export const changePassword = asyncHandler(async (req, res) => {
+  const userId = req.user?._id;
+  if (!userId) return res.status(401).json({ message: "Not authenticated" });
+
+  const currentPassword = isNonEmptyString(req.body.currentPassword) ? req.body.currentPassword : "";
+  const newPassword = isNonEmptyString(req.body.newPassword) ? req.body.newPassword : "";
+
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ message: "Current and new passwords are required" });
+  }
+  const pwdErr = validatePassword(newPassword);
+  if (pwdErr) return res.status(400).json({ message: pwdErr });
+
+  const user = await User.findById(userId).select("+password").exec();
+  if (!user) return res.status(404).json({ message: "User not found" });
+
+  const ok = await user.matchPassword(currentPassword);
+  if (!ok) return res.status(401).json({ message: "Current password is incorrect" });
+
+  user.password = newPassword; // hashed by pre-save hook
+  await user.save();
+
+  return res.status(200).json({ message: "Password updated" });
 });
