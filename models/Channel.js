@@ -8,7 +8,7 @@ import crypto from "crypto";
  */
 const slugify = (s) =>
   String(s ?? "")
-    .trim()
+    .trim() 
     .toLowerCase()
     .replace(/\s+/g, "_")
     .replace(/[^\w.\-]/g, "");
