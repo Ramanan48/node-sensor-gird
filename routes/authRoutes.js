@@ -8,7 +8,7 @@ import {
   rotateApiKey,
   updateProfile,
   changePassword,
-} from "../controllers/authController.js";
+} from "../controllers/authController.js";  
 import { protect } from "../middlewares/jwtProtect.js";
 
 const router = express.Router();
