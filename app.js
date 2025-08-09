@@ -12,6 +12,7 @@ import sensorRoutes from "./routes/sensorRoutes.js";
 import { verifyApiKey } from "./middlewares/apiKeyMiddleware.js";
 import { notFound, errorHandler } from "./middlewares/errorMiddleware.js";
 import docsRoute from "./routes/docs.js";
+import deviceRoutes from "./routes/deviceRoutes.js";
 
 const app = express();
 
@@ -40,6 +41,7 @@ app.use("/api/auth",verifyApiKey, authRoutes);
 app.use("/api/dashboard",verifyApiKey, dashboardRoutes);
 app.use("/api/channels",verifyApiKey, channelRoutes);
 app.use("/api/sensors",verifyApiKey, sensorRoutes);
+app.use("/api/devices", verifyApiKey, deviceRoutes);
 
 // 404 + error handlers
 app.use(notFound);
