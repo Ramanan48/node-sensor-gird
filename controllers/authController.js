@@ -1,6 +1,7 @@
 // controllers/authController.js
 import asyncHandler from "express-async-handler";
 import jwt from "jsonwebtoken";
+import { v4 as uuidv4 } from "uuid";
 import User from "../models/User.js";
 
 /* ============================================================================
@@ -33,18 +34,24 @@ const sanitizeToUsername = (str) =>
     .replace(/[^a-z0-9]+/g, "")
     .slice(0, 24);
 
+/**
+ * Try to allocate a unique username derived from a seed (name/email local-part).
+ * Expected O(1) on indexed collection; tiny retry loops.
+ */
 const ensureUniqueUsername = async (seed) => {
   const base = sanitizeToUsername(seed) || "user";
   let candidate = base;
 
   if (!(await User.exists({ username: candidate }))) return candidate;
 
+  // A few random attempts
   for (let i = 0; i < 5; i++) {
     const rand = Math.floor(Math.random() * 10000).toString().padStart(4, "0");
     candidate = `${base}${rand}`.slice(0, 30);
     if (!(await User.exists({ username: candidate }))) return candidate;
   }
 
+  // Deterministic fallback
   const count = await User.countDocuments({ username: new RegExp(`^${base}`, "i") });
   return `${base}${count + 1}`.slice(0, 30);
 };
@@ -69,11 +76,20 @@ const toPublicUser = (userDoc) => {
   };
 };
 
+/** Better duplicate-key parser using Mongo/Mongoose props */
 const parseDuplicateKey = (err) => {
-  const msg = String(err?.message || "");
-  if (msg.includes("email_1") || msg.toLowerCase().includes("email")) return "Email already in use";
-  if (msg.includes("username_1") || msg.toLowerCase().includes("username")) return "Username already in use";
-  if (msg.includes("apiKey_1") || msg.toLowerCase().includes("apikey")) return "API key conflict; please retry";
+  const key = err?.keyPattern ? Object.keys(err.keyPattern)[0] : null;
+  const val = err?.keyValue ? Object.values(err.keyValue)[0] : null;
+  const msg = (field) => (val ? `${field} "${val}" already in use` : `${field} already in use`);
+
+  if (key === "email") return msg("Email");
+  if (key === "username") return msg("Username");
+  if (key === "apiKey") return "API key conflict; please retry";
+  // Fallback to message sniffing (older drivers)
+  const raw = String(err?.message || "");
+  if (raw.toLowerCase().includes("email")) return "Email already in use";
+  if (raw.toLowerCase().includes("username")) return "Username already in use";
+  if (raw.toLowerCase().includes("apikey")) return "API key conflict; please retry";
   return "Duplicate key";
 };
 
@@ -90,7 +106,8 @@ const validatePassword = (pwd) => {
 /**
  * POST /api/auth/register
  * Body: { name, email, password, role? }
- * Ignores any username in the body; it is auto-generated and unique.
+ * - Always auto-generates a unique username (ignores client-sent username).
+ * - Retries on username/apiKey collision.
  */
 export const registerUser = asyncHandler(async (req, res) => {
   const { name, email, password, role } = normalizeAuthInput(req.body);
@@ -102,23 +119,16 @@ export const registerUser = asyncHandler(async (req, res) => {
   const pwdErr = validatePassword(password);
   if (pwdErr) return res.status(400).json({ message: pwdErr });
 
-  // Client-sent username is ignored to avoid conflicts
-  if (typeof req.body.username !== "undefined") {
-    // Log only; do not store
-    // eslint-disable-next-line no-console
-    console.warn("[register] Ignoring client-sent username");
-  }
-
-  // 1) email must be unique (indexed)
+  // 1) Email must be unique (indexed)
   const emailExists = await User.findOne({ email }).select("_id").lean();
   if (emailExists) return res.status(409).json({ message: "Email already in use" });
 
-  // 2) auto-generate a unique username
+  // 2) Auto-generate a unique username (ignore client username if provided)
   const seed = name || email.split("@")[0];
   let allocatedUsername = await ensureUniqueUsername(seed);
 
-  // 3) create user (retry a couple times if username collides mid-air)
-  for (let attempt = 0; attempt < 3; attempt++) {
+  // 3) Create user, retry on username/apiKey collisions
+  for (let attempt = 0; attempt < 4; attempt++) {
     try {
       const doc = {
         name,
@@ -126,27 +136,45 @@ export const registerUser = asyncHandler(async (req, res) => {
         password,           // hashed by model pre-save
         provider: "local",
         username: allocatedUsername,
+        // proactively set an apiKey so we can retry if rare collision occurs
+        apiKey: uuidv4(),
+        ...(role ? { role } : {}),
       };
-      if (role) doc.role = role;
 
       const user = await User.create(doc);
       const token = signToken(user);
       return res.status(201).json({ user: toPublicUser(user), token });
     } catch (err) {
-      // Unique collision on username/email/apiKey
       if (err?.code === 11000) {
-        const msg = parseDuplicateKey(err);
-        if (msg === "Username already in use") {F
+        const message = parseDuplicateKey(err);
+
+        // Username collision -> regenerate and retry
+        if (message.toLowerCase().includes("username")) {
           allocatedUsername = await ensureUniqueUsername(seed);
-          continue; // retry with a new username
+          continue;
         }
-        return res.status(409).json({ message: msg });
+
+        // apiKey collision -> regenerate apiKey and retry
+        if (message.toLowerCase().includes("api key")) {
+          // try again; new loop iteration will set a new uuidv4()
+          continue;
+        }
+
+        // Email collision -> stop immediately
+        if (message.toLowerCase().includes("email")) {
+          return res.status(409).json({ message });
+        }
+
+        // Unknown dup
+        return res.status(409).json({ message });
       }
+
+      // Non-duplicate error
       return res.status(500).json({ message: "Failed to register user" });
     }
   }
 
-  return res.status(500).json({ message: "Failed to allocate a unique username" });
+  return res.status(500).json({ message: "Failed to allocate unique credentials; please retry" });
 });
 
 /**
@@ -172,6 +200,7 @@ export const loginUser = asyncHandler(async (req, res) => {
   const ok = await user.matchPassword(password);
   if (!ok) return res.status(401).json({ message: invalidMsg });
 
+  // fire-and-forget
   void User.updateOne({ _id: user._id }, { $set: { lastLoginAt: new Date() } }).exec();
 
   const token = signToken(user);
