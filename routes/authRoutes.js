@@ -15,8 +15,8 @@ const router = express.Router();
 
 
 // Public (no API key, no JWT)
-router.post("/register", authLimiter, registerUser);
-router.post("/login", authLimiter, loginUser);
+router.post("/register", registerUser);
+router.post("/login", loginUser);
 
 // Private (JWT required)
 router.get("/me", protect, getMe);
